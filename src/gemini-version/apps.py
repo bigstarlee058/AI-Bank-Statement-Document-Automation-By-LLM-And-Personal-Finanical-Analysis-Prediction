@@ -14,27 +14,45 @@ set your google API key to environment variable
 
 import streamlit as st  # import stremlit
 from  PyPDF2 import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter # text splitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter # text splitter
 import os
+from pathlib import Path
 
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings # google gemini
-import google.generativeai as genai # google gemini
 # from langchain.vectorstores import FAISS # vector store use FAISS # oold version
 from langchain_community.vectorstores import FAISS
 
 from langchain_google_genai import ChatGoogleGenerativeAI # google gemini
-from langchain.chains.question_answering import load_qa_chain # question answering chart
+from langchain_classic.chains.question_answering import load_qa_chain # question answering chart
 # from langchain.chains import RetrievalQAChain # retrieval question answering chart
-from langchain.prompts import PromptTemplate # prompt template
+from langchain_core.prompts import PromptTemplate # prompt template
 # import langchain
 from dotenv import load_dotenv # load environment variable
 
 
 #load environment variable
-load_dotenv()
+APP_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = APP_DIR.parents[1]
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY")) # set key to environment variable
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+load_dotenv(APP_DIR / ".env", override=False)
+
+
+def getEnvValue(*names):
+    for name in names:
+        value = os.getenv(name, "").strip().strip("\"'")
+        if value and value != "YOUR KEY":
+            return value
+    return None
+
+
+GOOGLE_API_KEY = getEnvValue("GOOGLE_API_KEY", "GEMINI_API_KEY")
+GEMINI_MODEL = getEnvValue("GEMINI_MODEL") or "gemini-2.5-flash"
+GEMINI_EMBEDDING_MODEL = getEnvValue("GEMINI_EMBEDDING_MODEL") or "models/gemini-embedding-001"
+
+if GOOGLE_API_KEY:
+    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 # Set up the model
 generation_config = {
@@ -88,15 +106,15 @@ def getTextChunks(text, chunk_size=10000, chunk_overlap=1000):
 
 
 #get vector store
-def getVectorStore(text_chunks ,model="models/embedding-001"):
-    embeddings = GoogleGenerativeAIEmbeddings(model = model) # use google gemini for embedding
+def getVectorStore(text_chunks ,model=GEMINI_EMBEDDING_MODEL):
+    embeddings = GoogleGenerativeAIEmbeddings(model = model, api_key=GOOGLE_API_KEY) # use google gemini for embedding
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings) # use FAISS for vector store with google gemini embedding
     vector_store.save_local("faiss_index") # save vector store
     return vector_store # return vector store
 
 
 #get conversational chain
-def getConversationalChain(temperature=0.3, modelName="gemini-pro"):
+def getConversationalChain(temperature=0.3, modelName=GEMINI_MODEL):
     #promptTemplate
     promptTemplate = """
     Answer the question as detailed as possible from the provided context, make sure to provide all the details, if the answer is not in
@@ -107,8 +125,9 @@ def getConversationalChain(temperature=0.3, modelName="gemini-pro"):
     Answer:
     """
 
-    model=ChatGoogleGenerativeAI(model=modelName, 
-                                 temperature=temperature) # use google gemini model for conversational chain
+    model=ChatGoogleGenerativeAI(model=modelName,
+                                 temperature=temperature,
+                                 api_key=GOOGLE_API_KEY) # use google gemini model for conversational chain
     
     prompt = PromptTemplate(template = promptTemplate, 
                             input_variables = ["context", "question"]) # use prompt template for conversational chain
@@ -119,8 +138,8 @@ def getConversationalChain(temperature=0.3, modelName="gemini-pro"):
 
 
 # user input encode into query vector
-def user_input(user_question, model= "models/embedding-001"):
-    embeddings = GoogleGenerativeAIEmbeddings(model = model)
+def user_input(user_question, model=GEMINI_EMBEDDING_MODEL):
+    embeddings = GoogleGenerativeAIEmbeddings(model = model, api_key=GOOGLE_API_KEY)
     new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True) # load vector store
     docs = new_db.similarity_search(user_question)  # search for similar text in vector store
 
